@@ -1,5 +1,9 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.10'
+        }
+    }
 
     environment {
         REPO_URL = 'https://github.com/Techcognize-Inc/Real-Time-Payment-Streaming-Pipeline.git'
