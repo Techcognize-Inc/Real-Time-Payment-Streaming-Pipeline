@@ -24,57 +24,26 @@ pipeline {
 
         stage('Start Docker Infrastructure') {
             steps {
-                sh '''
-                docker-compose up -d
-                sleep 20
-                '''
+                sh 'docker compose up -d'
             }
         }
 
         stage('Verify Kafka Topic') {
             steps {
-                sh '''
-                docker exec kafka kafka-topics \
-                --bootstrap-server kafka:9092 \
-                --describe \
-                --topic payment_events || true
-                '''
+                sh 'docker exec kafka kafka-topics --list --bootstrap-server kafka:9092'
             }
         }
 
-        stage('Generate Payment Events') {
+        stage('Run Producer') {
             steps {
-                sh '''
-                python airflow/dags/producer/payment_producer.py &
-                '''
+                sh 'python airflow/dags/producer/payment_producer.py &'
             }
         }
 
         stage('Submit Flink Job') {
             steps {
-                sh '''
-                docker exec jobmanager flink run -py /opt/flink/usrlib/payment_stream_processor.py
-                '''
+                sh 'docker exec jobmanager flink run /opt/flink/usrlib/payment_fraud_detection.py'
             }
         }
-
-        stage('Prometheus Monitoring (Skipped)') {
-            steps {
-                echo 'Prometheus monitoring configured but skipped in Jenkins pipeline'
-            }
-        }
-
-        stage('Grafana Dashboard (Skipped)') {
-            steps {
-                echo 'Grafana dashboards handled outside Jenkins'
-            }
-        }
-
-        stage('Airflow Orchestration (Skipped)') {
-            steps {
-                echo 'Airflow DAGs managed separately'
-            }
-        }
-
     }
 }
