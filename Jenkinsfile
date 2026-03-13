@@ -3,19 +3,24 @@ pipeline {
 
     stages {
 
-       stage('Clone Repository') {
-    steps {
-        deleteDir()
-        git branch: 'main', url: 'https://github.com/Techcognize-Inc/Real-Time-Payment-Streaming-Pipeline.git'
-    }
-}
-
-       stage('Run Tests') {
-            agent {
-                docker {
-                    image 'python:3.10'
-                }
+        stage('Clone Repository') {
+            steps {
+                deleteDir()
+                git branch: 'main', url: 'https://github.com/Techcognize-Inc/Real-Time-Payment-Streaming-Pipeline.git'
             }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                docker run --rm -v $PWD:/app -w /app python:3.10 bash -c "
+                pip install --upgrade pip &&
+                pip install pytest &&
+                pytest tests
+                "
+                '''
+            }
+        }
 
         stage('Start Docker Infrastructure') {
             steps {
@@ -29,7 +34,10 @@ pipeline {
         stage('Verify Kafka Topic') {
             steps {
                 sh '''
-                docker exec kafka kafka-topics --list --bootstrap-server kafka:9092
+                docker exec kafka kafka-topics \
+                --bootstrap-server kafka:9092 \
+                --describe \
+                --topic payment_events || true
                 '''
             }
         }
@@ -45,35 +53,26 @@ pipeline {
         stage('Submit Flink Job') {
             steps {
                 sh '''
-                docker exec flink-jobmanager flink run -py /opt/flink/usrlib/payment_stream_processor.py
+                docker exec jobmanager flink run -py /opt/flink/usrlib/payment_stream_processor.py
                 '''
             }
         }
 
         stage('Prometheus Monitoring (Skipped)') {
-            when {
-                expression { false }
-            }
             steps {
-                echo 'Prometheus metrics collection is handled automatically via docker-compose.'
+                echo 'Prometheus monitoring configured but skipped in Jenkins pipeline'
             }
         }
 
         stage('Grafana Dashboard (Skipped)') {
-            when {
-                expression { false }
-            }
             steps {
-                echo 'Grafana dashboards visualize Prometheus metrics and do not require Jenkins execution.'
+                echo 'Grafana dashboards handled outside Jenkins'
             }
         }
 
         stage('Airflow Orchestration (Skipped)') {
-            when {
-                expression { false }
-            }
             steps {
-                echo 'Airflow DAGs orchestrate workflows but are not triggered by this Jenkins pipeline.'
+                echo 'Airflow DAGs managed separately'
             }
         }
 
