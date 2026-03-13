@@ -6,12 +6,14 @@ pipeline {
     }
 
     stages {
-
-        stage('Clone Repository') {
-            steps {
-                git branch: 'main', url: "${REPO_URL}"
-            }
-        }
+       stage('Install Dependencies') {
+       steps {
+        sh '''
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        '''
+    }
+}
 
         stage('Install Dependencies') {
             steps {
