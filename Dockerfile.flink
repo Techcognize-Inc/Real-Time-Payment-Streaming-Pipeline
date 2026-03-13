@@ -1,0 +1,37 @@
+FROM flink:1.18.1
+
+USER root
+
+# Install Python
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip wget && \
+    ln -s /usr/bin/python3 /usr/bin/python
+
+# Install Python libraries
+RUN pip3 install apache-flink kafka-python faker
+
+# Flink Kafka connector
+RUN wget -P /opt/flink/lib \
+https://repo1.maven.org/maven2/org/apache/flink/flink-connector-kafka/3.1.0-1.18/flink-connector-kafka-3.1.0-1.18.jar
+
+# Kafka client dependency (VERY IMPORTANT)
+RUN wget -P /opt/flink/lib \
+https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.5.1/kafka-clients-3.5.1.jar
+
+# Flink JDBC connector
+RUN wget -P /opt/flink/lib \
+https://repo1.maven.org/maven2/org/apache/flink/flink-connector-jdbc/3.1.2-1.18/flink-connector-jdbc-3.1.2-1.18.jar
+
+# PostgreSQL JDBC
+RUN wget -P /opt/flink/lib \
+https://jdbc.postgresql.org/download/postgresql-42.7.3.jar
+
+# Downloads Prometheus metrics reporter connector
+RUN wget -P /opt/flink/lib \
+https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.0/flink-metrics-prometheus-1.18.0.jar
+
+## Enables Prometheus Reporter
+RUN echo "metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory" >> /opt/flink/conf/flink-conf.yaml
+
+## Sets the port for Prometheus to scrape metrics
+RUN echo "metrics.reporter.prom.port: 9249" >> /opt/flink/conf/flink-conf.yaml

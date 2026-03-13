@@ -6,10 +6,8 @@ from kafka import KafkaProducer  # send data to Kafka
 from datetime import datetime  # add event timestamp
 
 fake = Faker()    # This creates a fake data generator. for example, fake.uuid4() generates a random UUID, and fake.name() generates a random name.
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',  
-    value_serializer=lambda v: json.dumps(v).encode('utf-8') # value_serializer: converts Python dictionary to JSON bytes
-)
+
+## Moving this to line 30 to avoid issues with KafkaProducer import when running tests that don't require it.
 
 banks = ["HDFC", "ICICI", "SBI", "AXIS"] 
 
@@ -26,17 +24,30 @@ def generate_payment():  # Payment Generator Function so this will return paymen
         "event_time": datetime.utcnow().isoformat() 
     }
 
-print(" Starting Payment Producer...")
 
-while True: # Infinite Loop 
-    payment = generate_payment()
+def run_producer():          ## new line if fails remove this
+    
+    producer = KafkaProducer(             ## move to line 9 if fails.
+            bootstrap_servers='kafka:9092',  
+            value_serializer=lambda v: json.dumps(v).encode('utf-8') # value_serializer: converts Python dictionary to JSON bytes
+        )
+    print("Starting Payment Producer...")
 
-    producer.send(            # Send to Kafka topic
-        "payments.raw",
-        key=payment["bank_code"].encode("utf-8"),  # key is bank_code, send to same partition for same bank_code, Preserve ordering per bank, Allow Flink keyed state. Without key → random partitioning.
-        value=payment
-    )
+    for i in range(1000):
 
-    print(f"Sent: {payment}")
+            payment = generate_payment()
 
-    time.sleep(0.1)  # 0.1 seconds = 10 transactions per second.
+            producer.send(
+                "payments_raw",
+                key=payment["bank_code"].encode("utf-8"),
+                value=payment
+            )
+
+            print(f"Sent: {payment}")
+
+            time.sleep(0.1)
+
+## New line below if fails remove this
+
+if __name__ == "__main__":  ## Run this only when the file is executed directly, not when imported as a module. This is a common Python idiom to allow code to be reusable and prevent unintended execution.
+  run_producer()  # call the producer function 

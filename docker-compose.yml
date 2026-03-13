@@ -15,80 +15,132 @@ services:
       - zookeeper
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+     
 
   postgres:
     image: postgres:15
     container_name: postgres
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
-      POSTGRES_DB: payments_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payments
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  spark-master:
-    image: apache/spark:3.5.1
-    container_name: spark-master
-    command: >
-      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
-    ports:
-      - "8085:8080"
-      - "7077:7077"
-
-  spark-worker:
-    image: apache/spark:3.5.1
-    container_name: spark-worker
-    depends_on:
-      - spark-master
-    command: >
-      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
-    ports:
-      - "8086:8081"
-
   flink-jobmanager:
-    image: flink:1.18.1
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
     container_name: flink-jobmanager
     command: jobmanager
     ports:
       - "8082:8081"
+      - "9249:9249"
+    volumes:
+      - ./flink_job:/opt/flink/usrlib
     environment:
-      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager 
+    depends_on:
+      - kafka
+      - postgres
 
   flink-taskmanager:
-    image: flink:1.18.1
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
     container_name: flink-taskmanager
     command: taskmanager
-    depends_on:
-      - flink-jobmanager
+    volumes:
+    - ./flink_job:/opt/flink/usrlib
     environment:
-      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+    - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+    - TASK_MANAGER_NUMBER_OF_TASK_SLOTS=4
+    depends_on:
+    - flink-jobmanager
 
   prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
+       image: prom/prometheus
+       container_name: prometheus
+       ports:
+       - "9090:9090"
+       volumes:
+         - ./prometheus.yml:/etc/prometheus/prometheus.yml
+       depends_on:
+         - flink-jobmanager
 
   grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    depends_on:
-      - prometheus
-    ports:
-      - "4000:3000"     # 🔥 changed from 3000 to 4000 to avoid conflict
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-    volumes:
-      - grafana_data:/var/lib/grafana
+       image: grafana/grafana
+       container_name: grafana
+       ports:
+       - "3001:3000"
+       environment:
+         - GF_SECURITY_ADMIN_USER=admin
+         - GF_SECURITY_ADMIN_PASSWORD=admin
+       depends_on:
+         - prometheus
+
+  airflow-postgres:
+     image: postgres:13
+     container_name: airflow-postgres
+     environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+     ports:
+     - "5433:5432"
+     volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+
+  airflow-webserver:
+   image: apache/airflow:2.7.3
+   container_name: airflow-webserver
+   depends_on:
+    - airflow-postgres
+    - flink-jobmanager
+   environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW_WEBSERVER_BASE_URL: http://localhost:8085
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__WEBSERVER__SECRET_KEY: mysecretkey123
+    _PIP_ADDITIONAL_REQUIREMENTS: faker kafka-python
+   volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - /var/run/docker.sock:/var/run/docker.sock
+   ports:
+    - "8085:8080"
+   command: webserver
+
+  airflow-scheduler:
+   image: apache/airflow:2.7.3
+   container_name: airflow-scheduler
+   depends_on:
+   - airflow-webserver
+   - flink-jobmanager
+   environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW_WEBSERVER_BASE_URL: http://localhost:8085
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__WEBSERVER__SECRET_KEY: mysecretkey123
+    _PIP_ADDITIONAL_REQUIREMENTS: faker kafka-python
+   volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - /var/run/docker.sock:/var/run/docker.sock
+   command: scheduler
+
 
 volumes:
   postgres_data:
-  grafana_data:
+  airflow_postgres_data:
