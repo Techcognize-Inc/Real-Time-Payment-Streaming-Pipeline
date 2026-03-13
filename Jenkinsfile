@@ -10,13 +10,15 @@ pipeline {
     }
 }
 
-        stage('Run Tests') {
-            steps {
-                sh '''
-                pytest tests
-                '''
-            }
-        }
+       stage('Run Tests') {
+    steps {
+        sh '''
+        python3 -m pip install --upgrade pip
+        pip3 install pytest
+        pytest tests
+        '''
+    }
+}
 
         stage('Start Docker Infrastructure') {
             steps {
