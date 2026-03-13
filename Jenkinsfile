@@ -38,7 +38,7 @@ pipeline {
             steps {
                 sh '''
                 docker exec kafka kafka-topics \
-                --bootstrap-server localhost:9092 \
+                --bootstrap-server kafka:9092 \
                 --list
                 '''
             }
