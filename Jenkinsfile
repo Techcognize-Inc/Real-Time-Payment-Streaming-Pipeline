@@ -11,14 +11,11 @@ pipeline {
 }
 
        stage('Run Tests') {
-    steps {
-        sh '''
-        python3 -m pip install --upgrade pip
-        pip3 install pytest
-        pytest tests
-        '''
-    }
-}
+            agent {
+                docker {
+                    image 'python:3.10'
+                }
+            }
 
         stage('Start Docker Infrastructure') {
             steps {
