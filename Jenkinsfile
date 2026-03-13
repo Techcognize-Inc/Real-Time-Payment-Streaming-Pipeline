@@ -3,11 +3,12 @@ pipeline {
 
     stages {
 
-        stage('Clone Repository') {
-            steps {
-                git 'https://github.com/Techcognize-Inc/Real-Time-Payment-Streaming-Pipeline.git'
-            }
-        }
+       stage('Clone Repository') {
+    steps {
+        deleteDir()
+        git branch: 'main', url: 'https://github.com/Techcognize-Inc/Real-Time-Payment-Streaming-Pipeline.git'
+    }
+}
 
         stage('Run Tests') {
             steps {
