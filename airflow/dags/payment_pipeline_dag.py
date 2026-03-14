@@ -42,7 +42,7 @@ with DAG(
 
     refresh_grafana = BashOperator(
         task_id="refresh_grafana",
-        bash_command="curl http://localhost:3000" ,
+        bash_command="curl http://grafana:3000" ,
         dag=dag
     )
 
