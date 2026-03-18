@@ -11,7 +11,7 @@ default_args = {
 with DAG(
     dag_id="payment_streaming_pipeline",
     default_args=default_args,
-    schedule_interval=None,
+    schedule_interval=None,                                                            ## 0 0 */14 * * -  If we want to run every 14 days. 
     catchup=False
 ) as dag:
 

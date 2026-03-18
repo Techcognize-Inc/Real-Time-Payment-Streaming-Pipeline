@@ -25,7 +25,16 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-     
+
+  kafka-exporter:
+   image: danielqsj/kafka-exporter
+   container_name: kafka-exporter
+   ports:
+    - "9308:9308"
+   command:
+    - '--kafka.server=kafka:9092'
+   depends_on:
+    - kafka
 
   postgres:
     image: postgres:15
@@ -38,6 +47,16 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  postgres-exporter:
+   image: prometheuscommunity/postgres-exporter
+   container_name: postgres-exporter
+   environment:
+    DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:5432/postgres?sslmode=disable"
+   ports:
+    - "9187:9187"
+   depends_on:
+    - postgres
 
   flink-jobmanager:
     build:
