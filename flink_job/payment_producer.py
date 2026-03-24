@@ -60,14 +60,12 @@ def run_producer(high_failure=False):
         print(f"Sent: {payment}")
         time.sleep(0.1)
 
-    producer.flush()  ## Forces any buffered messages to be sent before the script exits.
+    producer.flush()
     print("Done.")
 
 
 if __name__ == "__main__":
     import sys
 
-    high_failure = (
-        "--high-failure" in sys.argv
-    )  ## No flag → high_failure = False → normal 5% failures. With flag → high_failure = True → forced 30% failures
+    high_failure = "--high-failure" in sys.argv
     run_producer(high_failure=high_failure)
