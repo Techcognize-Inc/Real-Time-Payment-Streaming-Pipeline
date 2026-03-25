@@ -15,7 +15,7 @@ End-to-end automation via Airflow orchestration and Jenkins CI validation
 2. Architecture Overview
 The platform follows a streaming-first architecture: events are produced continuously, processed in Flink, aggregated by bank in time windows, persisted for analytics, and monitored for anomalies.
 
-2.2 Key Design Decisions (Operationally Relevant)
+2.1 Key Design Decisions (Operationally Relevant)
 
 Partitioning / message key: Events are keyed by bank_code to keep bank-level aggregations consistent and scalable.
 Windowing strategy: 1-minute tumbling windows enable fast detection of failure spikes with predictable aggregation cadence.
