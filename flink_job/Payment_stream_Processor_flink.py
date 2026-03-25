@@ -21,6 +21,7 @@ def create_table_if_not_exists():
                 """
                 CREATE TABLE IF NOT EXISTS payment_aggregates (
                     bank_code VARCHAR,
+                    payment_type VARCHAR,
                     total_transactions INT,
                     failed_transactions INT,
                     success_rate FLOAT,
@@ -37,14 +38,32 @@ create_table_if_not_exists()
 
 
 # Flink core APIs
-from pyflink.datastream import StreamExecutionEnvironment, CheckpointingMode
-from pyflink.common import WatermarkStrategy
-from pyflink.datastream import OutputTag
-from pyflink.common.typeinfo import Types
-from pyflink.common import Row
-from pyflink.common.time import Time
-from pyflink.datastream.window import TumblingProcessingTimeWindows
-from pyflink.datastream.functions import ProcessWindowFunction, ProcessFunction
+from pyflink.datastream import (
+    StreamExecutionEnvironment,
+    CheckpointingMode,
+)  ## entry point for every Flink job + Configures fault-tolerance (exactly-once
+from pyflink.common import (
+    WatermarkStrategy,
+)  ## Tells Flink how to handle event-time and late-arriving records
+from pyflink.datastream import (
+    OutputTag,
+)  ## Used for side outputs (e.g., dead letter queue)
+from pyflink.common.typeinfo import (
+    Types,
+)  ## Defines the type schema for Flink's serialization
+from pyflink.common import (
+    Row,
+)  ## Represents a structured record when working with typed streams
+from pyflink.common.time import (
+    Time,
+)  ## Specifies time durations (e.g., window size of 1 minute)
+from pyflink.datastream.window import (
+    TumblingProcessingTimeWindows,
+)  ## Defines a tumbling window based on processing time
+from pyflink.datastream.functions import (
+    ProcessWindowFunction,
+    ProcessFunction,
+)  ## Custom processing logic for windows and individual records
 
 # Kafka + JDBC connectors
 from pyflink.datastream.connectors.kafka import (
@@ -117,9 +136,10 @@ class ParseEvent(ProcessFunction):
         try:
             data = json.loads(value)
             yield (
-                data["bank_code"],  # grouping key
-                data["status"],  # SUCCESS / FAILED
-                float(data.get("amount", 0.0)),  # transaction amount
+                data["bank_code"],    # grouping key
+                data["status"],       # SUCCESS / FAILED
+                float(data["amount"]),# transaction amount
+                data["payment_type"], # e.g. CREDIT, DEBIT, WIRE
             )
         except (json.JSONDecodeError, KeyError) as e:
             # 👉 Route malformed / missing-field records to the DLQ topic
@@ -129,7 +149,7 @@ class ParseEvent(ProcessFunction):
 
 parsed_stream = stream.process(
     ParseEvent(),
-    output_type=Types.TUPLE([Types.STRING(), Types.STRING(), Types.FLOAT()]),
+    output_type=Types.TUPLE([Types.STRING(), Types.STRING(), Types.FLOAT(), Types.STRING()]),
 )
 # 👉 Valid records continue on parsed_stream; bad records go to the DLQ side output
 
@@ -140,9 +160,9 @@ dlq_stream = parsed_stream.get_side_output(dlq_tag)
 # ---------------------------------------------------
 # 4. Key by bank_code
 # ---------------------------------------------------
-keyed_stream = parsed_stream.key_by(lambda x: x[0])
-# 👉 Groups data by bank_code
-# 👉 All transactions of the same bank go to the same parallel slot
+keyed_stream = parsed_stream.key_by(lambda x: (x[0], x[3]))
+# 👉 Groups data by (bank_code, payment_type)
+# 👉 Each bank + payment type combination is aggregated separately
 
 
 # ---------------------------------------------------
@@ -155,9 +175,11 @@ class PaymentAggregator(ProcessWindowFunction):
         failed = 0
         total_amount = 0.0
 
+        payment_type = None
         for e in elements:
             total += 1
             total_amount += e[2]
+            payment_type = e[3]
             if e[1] == "FAILED":
                 failed += 1
         # 👉 Loop through all records in window
@@ -170,11 +192,12 @@ class PaymentAggregator(ProcessWindowFunction):
         # 👉 Get window start time
 
         yield Row(
-            key,  # bank_code
-            total,  # total transactions
-            failed,  # failed transactions
-            success_rate,  # success rate
-            round(total_amount, 2),  # total transaction value
+            key[0],                                       # bank_code
+            payment_type,                                 # payment_type
+            total,                                        # total transactions
+            failed,                                       # failed transactions
+            success_rate,                                 # success rate
+            round(total_amount, 2),                       # total transaction value
             window_start.strftime("%Y-%m-%d %H:%M:%S"),  # window start timestamp
         )
         # 👉 Output aggregated result per bank per window as Row (required by JdbcSink)
@@ -187,10 +210,11 @@ aggregated_stream = keyed_stream.window(
     output_type=Types.ROW(
         [
             Types.STRING(),  # bank_code
-            Types.INT(),  # total
-            Types.INT(),  # failed
-            Types.FLOAT(),  # success_rate
-            Types.FLOAT(),  # total_amount
+            Types.STRING(),  # payment_type
+            Types.INT(),     # total
+            Types.INT(),     # failed
+            Types.FLOAT(),   # success_rate
+            Types.FLOAT(),   # total_amount
             Types.STRING(),  # window_start
         ]
     ),
@@ -214,17 +238,18 @@ jdbc_url = f"jdbc:postgresql://{db_host}:{db_port}/{db_name}"
 sink = JdbcSink.sink(
     """
     INSERT INTO payment_aggregates
-    (bank_code, total_transactions, failed_transactions, success_rate, total_amount, window_start)
-    VALUES (?, ?, ?, ?, ?, ?)
+    (bank_code, payment_type, total_transactions, failed_transactions, success_rate, total_amount, window_start)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     """,
     type_info=Types.ROW(
         [
-            Types.STRING(),
-            Types.INT(),
-            Types.INT(),
-            Types.FLOAT(),
-            Types.FLOAT(),
-            Types.STRING(),
+            Types.STRING(),  # bank_code
+            Types.STRING(),  # payment_type
+            Types.INT(),     # total_transactions
+            Types.INT(),     # failed_transactions
+            Types.FLOAT(),   # success_rate
+            Types.FLOAT(),   # total_amount
+            Types.STRING(),  # window_start
         ]
     ),
     jdbc_connection_options=(
@@ -254,18 +279,19 @@ aggregated_stream.add_sink(sink)
 # ---------------------------------------------------
 # 7. Failure Alert Sink — banks with failure rate > 5%
 # ---------------------------------------------------
-alert_stream = aggregated_stream.filter(lambda x: x.f3 < 0.95)
-# 👉 f3 is success_rate — filter keeps only banks below 95% success (>5% failure)
+alert_stream = aggregated_stream.filter(lambda x: x.f4 < 0.95)
+# 👉 f4 is success_rate — filter keeps only banks below 95% success (>5% failure)
 
 alert_message_stream = alert_stream.map(
     lambda x: json.dumps(
         {
             "bank_code": x.f0,
-            "total_transactions": x.f1,
-            "failed_transactions": x.f2,
-            "failure_rate_pct": round((1 - x.f3) * 100, 2),
-            "window_start": x.f5,
-            "alert": f"ALERT: {x.f0} failure rate {round((1 - x.f3) * 100, 2)}% exceeds 5% threshold",
+            "payment_type": x.f1,
+            "total_transactions": x.f2,
+            "failed_transactions": x.f3,
+            "failure_rate_pct": round((1 - x.f4) * 100, 2),
+            "window_start": x.f6,
+            "alert": f"ALERT: {x.f0} ({x.f1}) failure rate {round((1 - x.f4) * 100, 2)}% exceeds 5% threshold",
         }
     ),
     output_type=Types.STRING(),
