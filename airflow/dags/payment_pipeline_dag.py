@@ -19,7 +19,7 @@ with DAG(
     submit_flink_job = BashOperator(
         task_id="submit_flink_job",
         bash_command="""
-        docker exec flink-jobmanager bash -c "flink run -py /opt/flink/usrlib/payment_stream_processor.py"
+        docker exec flink-jobmanager bash -c "flink run -d -py /opt/flink/usrlib/Payment_stream_Processor_flink.py"
         """,
     )
 
@@ -31,8 +31,8 @@ with DAG(
     validate_aggregates = BashOperator(
         task_id="validate_aggregates",
         bash_command="""
-        docker exec postgres psql -U postgres -d payments \
-        -c "SELECT * FROM payment_aggregates LIMIT 5;"
+        sleep 75 && docker exec postgres psql -U postgres -d payments \
+        -c "SELECT * FROM payment_aggregates ORDER BY window_start DESC LIMIT 5;"
         """,
     )
 
