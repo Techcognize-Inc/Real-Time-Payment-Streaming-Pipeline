@@ -160,6 +160,17 @@ services:
    command: scheduler
 
 
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    ports:
+      - "8090:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_data:/var/jenkins_home
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   airflow_postgres_data:
+  jenkins_data:
