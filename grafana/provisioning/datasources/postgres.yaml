@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: PaymentsPostgres
+    type: grafana-postgresql-datasource
+    uid: payments-postgres
+    url: postgres:5432
+    database: payments
+    user: postgres
+    secureJsonData:
+      password: postgres
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+    isDefault: true
