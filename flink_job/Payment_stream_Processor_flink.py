@@ -136,10 +136,10 @@ class ParseEvent(ProcessFunction):
         try:
             data = json.loads(value)
             yield (
-                data["bank_code"],    # grouping key
-                data["status"],       # SUCCESS / FAILED
-                float(data["amount"]),# transaction amount
-                data["payment_type"], # e.g. CREDIT, DEBIT, WIRE
+                data["bank_code"],  # grouping key
+                data["status"],  # SUCCESS / FAILED
+                float(data["amount"]),  # transaction amount
+                data["payment_type"],  # e.g. CREDIT, DEBIT, WIRE
             )
         except (json.JSONDecodeError, KeyError) as e:
             # 👉 Route malformed / missing-field records to the DLQ topic
@@ -149,7 +149,9 @@ class ParseEvent(ProcessFunction):
 
 parsed_stream = stream.process(
     ParseEvent(),
-    output_type=Types.TUPLE([Types.STRING(), Types.STRING(), Types.FLOAT(), Types.STRING()]),
+    output_type=Types.TUPLE(
+        [Types.STRING(), Types.STRING(), Types.FLOAT(), Types.STRING()]
+    ),
 )
 # 👉 Valid records continue on parsed_stream; bad records go to the DLQ side output
 
@@ -192,12 +194,12 @@ class PaymentAggregator(ProcessWindowFunction):
         # 👉 Get window start time
 
         yield Row(
-            key[0],                                       # bank_code
-            payment_type,                                 # payment_type
-            total,                                        # total transactions
-            failed,                                       # failed transactions
-            success_rate,                                 # success rate
-            round(total_amount, 2),                       # total transaction value
+            key[0],  # bank_code
+            payment_type,  # payment_type
+            total,  # total transactions
+            failed,  # failed transactions
+            success_rate,  # success rate
+            round(total_amount, 2),  # total transaction value
             window_start.strftime("%Y-%m-%d %H:%M:%S"),  # window start timestamp
         )
         # 👉 Output aggregated result per bank per window as Row (required by JdbcSink)
@@ -211,10 +213,10 @@ aggregated_stream = keyed_stream.window(
         [
             Types.STRING(),  # bank_code
             Types.STRING(),  # payment_type
-            Types.INT(),     # total
-            Types.INT(),     # failed
-            Types.FLOAT(),   # success_rate
-            Types.FLOAT(),   # total_amount
+            Types.INT(),  # total
+            Types.INT(),  # failed
+            Types.FLOAT(),  # success_rate
+            Types.FLOAT(),  # total_amount
             Types.STRING(),  # window_start
         ]
     ),
@@ -245,10 +247,10 @@ sink = JdbcSink.sink(
         [
             Types.STRING(),  # bank_code
             Types.STRING(),  # payment_type
-            Types.INT(),     # total_transactions
-            Types.INT(),     # failed_transactions
-            Types.FLOAT(),   # success_rate
-            Types.FLOAT(),   # total_amount
+            Types.INT(),  # total_transactions
+            Types.INT(),  # failed_transactions
+            Types.FLOAT(),  # success_rate
+            Types.FLOAT(),  # total_amount
             Types.STRING(),  # window_start
         ]
     ),
